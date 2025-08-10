@@ -1,10 +1,14 @@
-from typing import Any
+from typing import Any, Optional
 import httpx
+import logging
 
-from main import mcp
+from mcp.server.fastmcp import FastMCP
 
+# Initialize FastMCP server
+mcp = FastMCP("anime")
+logger = logging.getLogger('anime')
 # Constants
-NWS_API_BASE = "https://api.jikan.moe/v4/anime"
+NWS_API_BASE = "https://api.jikan.moe/v4/"
 
 async def make_jikan_request(url: str) -> dict[str, Any] | None:
     """Make a request to the NWS API with proper error handling."""
@@ -17,6 +21,12 @@ async def make_jikan_request(url: str) -> dict[str, Any] | None:
         except Exception:
             return None
 
+def format_genre(data):
+    return f"""
+    ID: {data["mal_id"]},
+    Name: {data["name"]}.
+    Count: {data["count"]}
+    """
 
 def format_anime(data):
     title = data["titles"][0]["title"] if data["titles"] else "Couldn't find title"
@@ -24,18 +34,41 @@ def format_anime(data):
     Title: {title},
     Episodes: {data["episodes"]},
     Status: {data["status"]}
+    Score: {data["score"]}
     """
 
 @mcp.tool()
-async def get_anime(title: str) -> str:
-    """Find anime based on title.
+async def get_anime_genre() -> str:
+    """Get the available anime genres"""
+    url = f"{NWS_API_BASE}genres/anime"
+    logger.info(url)
+
+    response = await make_jikan_request(url)
+    logger.info(response)
+    if not response or "data" not in response:
+        return "Unable to fetch anime genres."
+    genres = [format_genre(genre) for genre in response["data"]]
+    return "\n---\n".join(genres)
+
+
+@mcp.tool()
+async def get_anime(title: Optional[str], genre: Optional[int]) -> str:
+    """Find anime based on title or genre (which can be found from get_anime_genre).
 
     Args:
         title: Title of an anime
+        genre: Genre of an anime (ID from get_anime_genre)
     """
-    url = f"{NWS_API_BASE}?q={title}"
+    url = f"{NWS_API_BASE}anime?"
+    if title:
+        url = url + f"q={title}"
+    if genre:
+        url = f"{url}genres={genre}"
+    if not title and not genre:
+        return "Title or genre not selected"
+    logger.info(url)
     response = await make_jikan_request(url)
-
+    logger.info(response)
     if not response or "data" not in response:
         return "Unable to fetch anime or anime not found."
 
@@ -44,3 +77,7 @@ async def get_anime(title: str) -> str:
 
     animes = [format_anime(anime) for anime in response["data"]]
     return "\n---\n".join(animes)
+
+if __name__ == "__main__":
+    # Initialize and run the server
+    mcp.run(transport='stdio')
