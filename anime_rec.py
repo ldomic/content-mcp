@@ -52,18 +52,21 @@ async def get_anime_genre() -> str:
 
 
 @mcp.tool()
-async def get_anime(title: Optional[str], genre: Optional[int]) -> str:
+async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optional[bool]) -> str:
     """Find anime based on title or genre (which can be found from get_anime_genre).
 
     Args:
         title: Title of an anime
         genre: Genre of an anime (ID from get_anime_genre)
+        is_good: A wish to search for anime based on score
     """
     url = f"{NWS_API_BASE}anime?"
     if title:
         url = url + f"q={title}"
     if genre:
-        url = f"{url}genres={genre}"
+        url = url + f"{url}genres={genre}"
+    if is_good:
+        url = url + f"order_by=score"
     if not title and not genre:
         return "Title or genre not selected"
     logger.info(url)
