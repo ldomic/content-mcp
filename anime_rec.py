@@ -28,7 +28,7 @@ def format_genre(data):
     Count: {data["count"]}
     """
 
-def get_english_tile(data):
+def get_english_title(data):
     if data["title_english"]:
         return data["title_english"]
     if data["titles"]:
@@ -43,7 +43,7 @@ def get_english_tile(data):
 
 
 def format_anime(data):
-    title = get_english_tile(data)
+    title = get_english_title(data)
     return f"""
     Title: {title},
     Episodes: {data["episodes"]},
