@@ -32,8 +32,8 @@ def get_english_tile(data):
     if data["title_english"]:
         return data["title_english"]
     if data["titles"]:
-        english_title = [x["title"] for x in data["tiles"] if x["type"] == "English"][0]
-        default_title = [x["title"] for x in data["tiles"] if x["type"] == "Default"][0]
+        english_title = [x["title"] for x in data["titles"] if x["type"] == "English"][0]
+        default_title = [x["title"] for x in data["titles"] if x["type"] == "Default"][0]
         if len(english_title) > 0:
             return english_title
         if len(default_title) > 0:
@@ -64,11 +64,15 @@ async def get_anime_genre() -> str:
 
 
 @mcp.tool()
-async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optional[bool]) -> str:
+async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optional[bool], content_type: str = 'tv') -> str:
     """Find anime based on title or genre (which can be found from get_anime_genre).
 
     Args:
         title: Title of an anime
+        content_type:
+            Enum - "tv" "movie" "ova" "special" "ona" "music" "cm" "pv" "tv_special"
+            Assume I always want to watch TV series unless I specifically ask for
+            other types, then use one of the enum options
         genre: Genre of an anime (ID from get_anime_genre)
         is_good: A wish to search for anime based on score
     """
@@ -79,6 +83,7 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
         url = url + f"{url}genres={genre}"
     if is_good:
         url = url + f"&order_by=score"
+    url = url + f"&type={content_type}"
     if not title and not genre:
         return "Title or genre not selected"
     logger.info(url)
