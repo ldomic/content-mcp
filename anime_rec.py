@@ -32,12 +32,12 @@ def get_english_title(data):
     if data["title_english"]:
         return data["title_english"]
     if data["titles"]:
-        english_title = [x["title"] for x in data["titles"] if x["type"] == "English"][0]
-        default_title = [x["title"] for x in data["titles"] if x["type"] == "Default"][0]
+        english_title = [x["title"] for x in data["titles"] if x["type"] == "English"]
+        default_title = [x["title"] for x in data["titles"] if x["type"] == "Default"]
         if len(english_title) > 0:
-            return english_title
+            return english_title[0]
         if len(default_title) > 0:
-            return default_title
+            return default_title[0]
         return data["titles"][0]["title"]
     return data["title"] if data["title"] else "Couldn't find title"
 
@@ -59,8 +59,12 @@ async def get_anime_genre() -> str:
     response = await make_jikan_request(url)
     if not response or "data" not in response:
         return "Unable to fetch anime genres."
-    genres = [format_genre(genre) for genre in response["data"]]
-    return "\n---\n".join(genres)
+    try:
+        genres = [format_genre(genre) for genre in response["data"]]
+        return "\n---\n".join(genres)
+    except Exception as e:
+        logger.error(e)
+        return "Couldn't find genres"
 
 
 @mcp.tool()
@@ -80,7 +84,7 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
     if title:
         url = url + f"q={title}"
     if genre:
-        url = url + f"{url}genres={genre}"
+        url = url + f"genres={genre}"
     if is_good:
         url = url + f"&order_by=score"
     url = url + f"&type={content_type}"
