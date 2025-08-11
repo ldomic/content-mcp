@@ -28,8 +28,22 @@ def format_genre(data):
     Count: {data["count"]}
     """
 
+def get_english_tile(data):
+    if data["title_english"]:
+        return data["title_english"]
+    if data["titles"]:
+        english_title = [x["title"] for x in data["tiles"] if x["type"] == "English"][0]
+        default_title = [x["title"] for x in data["tiles"] if x["type"] == "Default"][0]
+        if len(english_title) > 0:
+            return english_title
+        if len(default_title) > 0:
+            return default_title
+        return data["titles"][0]["title"]
+    return data["title"] if data["title"] else "Couldn't find title"
+
+
 def format_anime(data):
-    title = data["titles"][0]["title"] if data["titles"] else "Couldn't find title"
+    title = get_english_tile(data)
     return f"""
     Title: {title},
     Episodes: {data["episodes"]},
@@ -41,10 +55,8 @@ def format_anime(data):
 async def get_anime_genre() -> str:
     """Get the available anime genres"""
     url = f"{NWS_API_BASE}genres/anime"
-    logger.info(url)
 
     response = await make_jikan_request(url)
-    logger.info(response)
     if not response or "data" not in response:
         return "Unable to fetch anime genres."
     genres = [format_genre(genre) for genre in response["data"]]
@@ -66,12 +78,11 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
     if genre:
         url = url + f"{url}genres={genre}"
     if is_good:
-        url = url + f"order_by=score"
+        url = url + f"&order_by=score"
     if not title and not genre:
         return "Title or genre not selected"
     logger.info(url)
     response = await make_jikan_request(url)
-    logger.info(response)
     if not response or "data" not in response:
         return "Unable to fetch anime or anime not found."
 
