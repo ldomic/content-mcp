@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, List, Optional
 import httpx
 import logging
 
@@ -28,6 +28,21 @@ def format_genre(data):
     Count: {data["count"]}
     """
 
+def format_character(data):
+    return f"""
+    ID: {data["character"]["mal_id"]}
+    Name: {data["character"]["name"]}
+    Role: {data["role"]}
+    """
+
+def format_episode(data):
+    return f"""
+    ID: {data["mal_id"]}
+    Title: {data["title"]}
+    Filler/recap: {data["filler"] or data["recap"]}
+    Aired: {data["aired"][10]}
+    """
+
 def get_english_title(data):
     if data["title_english"]:
         return data["title_english"]
@@ -42,14 +57,21 @@ def get_english_title(data):
     return data["title"] if data["title"] else "Couldn't find title"
 
 
-def format_anime(data):
+def format_anime(data, starts_at):
     title = get_english_title(data)
-    return f"""
+    response = f"""
     Title: {title},
+    ID: {data["mal_id"]},
     Episodes: {data["episodes"]},
     Status: {data["status"]}
     Score: {data["score"]}
     """
+    if starts_at:
+        response += f"""
+            Season: {data['season']}
+            Year: {data['year']}
+        """
+    return response
 
 @mcp.tool()
 async def get_anime_genre() -> str:
@@ -68,7 +90,14 @@ async def get_anime_genre() -> str:
 
 
 @mcp.tool()
-async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optional[bool], content_type: str = 'tv') -> str:
+async def get_anime(
+        title: Optional[str],
+        genre: Optional[int],
+        is_good: Optional[bool],
+        starts_at: Optional[str],
+        status: Optional[str],
+        content_type: str = 'tv'
+    ) -> str:
     """Find anime based on title or genre (which can be found from get_anime_genre).
 
     Args:
@@ -78,6 +107,8 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
             Assume I always want to watch TV series unless I specifically ask for
             other types, then use one of the enum options
         genre: Genre of an anime (ID from get_anime_genre)
+        starts_at: String in 'YYYY-mm-dd' form which allows to filter anime by their start date or can be used to get season and year data
+        status: Enum: "airing" "complete" "upcoming" - available statuses
         is_good: A wish to search for anime based on score
     """
     url = f"{NWS_API_BASE}anime?"
@@ -87,6 +118,10 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
         url = url + f"genres={genre}"
     if is_good:
         url = url + f"&order_by=score"
+    if starts_at:
+        url = url + f"&starts_at={starts_at}"
+    if status:
+        url = url + f"&status={status}"
     url = url + f"&type={content_type}"
     if not title and not genre:
         return "Title or genre not selected"
@@ -98,8 +133,108 @@ async def get_anime(title: Optional[str], genre: Optional[int], is_good: Optiona
     if not response["data"]:
         return "Anime not found."
 
-    animes = [format_anime(anime) for anime in response["data"]]
+    animes = [format_anime(anime, starts_at) for anime in response["data"]]
     return "\n---\n".join(animes)
+
+
+@mcp.tool()
+async def get_anime_characters(id: Optional[int], name: Optional[str]) -> str:
+    url = f"{NWS_API_BASE}anime/{id}/characters"
+    response = await make_jikan_request(url)
+    if not response or "data" not in response:
+        return "Unable to fetch anime or anime not found."
+
+    characters = [format_character(char) for char in response["data"]]
+    return "\n---\n".join(characters)
+
+
+@mcp.tool()
+async def get_anime_details(id: int, characters: bool, synopsis: bool) -> str:
+    """
+    Use this tool to get more details about a specific anime
+    the user has expressed an interest into - requires a specific ID
+
+    :param id: MAL ID which can be retrieved from get_anime
+    :param characters: Flag to use if user is interested in characters for
+    this anime
+    :param synopsis: Only retrieve synopsis if it is required to answer a question or continue conversation
+    :return:
+    """
+
+    url = f"{NWS_API_BASE}anime/{id}/full"
+
+    response = await make_jikan_request(url)
+    if not response or "data" not in response:
+        return "Unable to fetch anime or anime not found."
+
+    if characters:
+        character_list = get_anime_characters(id=id)
+    if not response["data"]:
+        return f"Data couldn't be fetched for anime with ID {id}"
+    data = response["data"]
+
+    anime_description = f"""
+    Episodes: {data["episodes"]}
+    Streaming: {",".join([x['name'] for x in data["streaming"]])}
+    """
+    if synopsis:
+        anime_description += f"""
+    Synopsis: {data["synopsis"]}
+    """
+
+    return anime_description
+
+
+@mcp.tool()
+async def get_episodes(id:int,num_episodes: int = 10, sort: str = "asc"):
+    """
+    Returns information about the episodes for an anime, user can request
+    a certain amount of episodes.
+    if user requests total number of episodes this can be derived from the
+    highest ID of the episode on the last page - request just 1 record sorted desc
+
+    ID: MAL ID of the anime (can be retrieved from get_anime)
+    num_episodes: How many episodes to retrieve
+    """
+    url = f"{NWS_API_BASE}anime/{id}/episodes"
+
+
+    response = await call_jikan(url)
+    if not response["data"]:
+        return response
+
+    last_page = response["pagination"]["last_visible_page"]
+    #
+    if sort == "desc":
+        logger.info(f"sort: {sort}")
+        logger.info(f"pag: {response['pagination']}")
+        if response["pagination"]["has_next_page"]:
+            url = url + f"?page={last_page}"
+            logger.info(f"last_url: {url}")
+            response = await call_jikan(url)
+            if not response["data"]:
+                return response + "; issue with pagination"
+            episodes = response["data"]
+        else:
+            episodes=response["data"]
+        episodes = sorted(episodes, key=lambda x: x["mal_id"], reverse=True)
+    else:
+        episodes = response["data"]
+
+
+    episodes = [format_episode(epi) for epi in episodes[:num_episodes]]
+    return "\n---\n".join(episodes)
+
+
+
+async def call_jikan(url):
+    response = await make_jikan_request(url)
+    if not response or "data" not in response:
+        return "Unable to fetch anime or anime not found."
+
+    if not response["data"]:
+        return f"Data couldn't be fetched for anime"
+    return response
 
 if __name__ == "__main__":
     # Initialize and run the server
