@@ -40,7 +40,7 @@ def format_episode(data):
     ID: {data["mal_id"]}
     Title: {data["title"]}
     Filler/recap: {data["filler"] or data["recap"]}
-    Aired: {data["aired"][10]}
+    Aired: {data["aired"][:10]}
     """
 
 def get_english_title(data):
@@ -175,7 +175,7 @@ async def get_anime_details(id: int, characters: bool, synopsis: bool) -> str:
 
     anime_description = f"""
     Episodes: {data["episodes"]}
-    Streaming: {",".join([x['name'] for x in data["streaming"]])}
+    Streaming: {", ".join([x['name'] for x in data["streaming"]])}
     """
     if synopsis:
         anime_description += f"""
@@ -183,7 +183,6 @@ async def get_anime_details(id: int, characters: bool, synopsis: bool) -> str:
     """
 
     return anime_description
-
 
 @mcp.tool()
 async def get_episodes(id:int,num_episodes: int = 10, sort: str = "asc"):
@@ -198,34 +197,55 @@ async def get_episodes(id:int,num_episodes: int = 10, sort: str = "asc"):
     """
     url = f"{NWS_API_BASE}anime/{id}/episodes"
 
-
     response = await call_jikan(url)
     if not response["data"]:
         return response
 
     last_page = response["pagination"]["last_visible_page"]
-    #
-    if sort == "desc":
-        logger.info(f"sort: {sort}")
-        logger.info(f"pag: {response['pagination']}")
+    episodes_from_page0 = response["data"]
+
+    last_visited_page = 0
+    episodes = []
+    while num_episodes != len(episodes):
         if response["pagination"]["has_next_page"]:
-            url = url + f"?page={last_page}"
-            logger.info(f"last_url: {url}")
+            if sort == "desc":
+                if last_visited_page == 1:
+                    episodes.extend(episodes_from_page0)
+                    break
+                url = url + f"?page={last_page if last_visited_page == 0 else last_visited_page-1}"
+            else:
+                url = url + f"?page={last_visited_page + 1}"
+
             response = await call_jikan(url)
             if not response["data"]:
                 return response + "; issue with pagination"
-            episodes = response["data"]
+            episodes.extend(response["data"])
         else:
-            episodes=response["data"]
-        episodes = sorted(episodes, key=lambda x: x["mal_id"], reverse=True)
-    else:
-        episodes = response["data"]
+            episodes.extend(response["data"])
+            break
 
+    if sort == "desc":
+        episodes = sorted(episodes, key=lambda x: x["mal_id"], reverse=True)
 
     episodes = [format_episode(epi) for epi in episodes[:num_episodes]]
     return "\n---\n".join(episodes)
 
+@mcp.tool()
+async def get_episode(anime_id: int, id: int) -> str:
+    """Get the synopsis of a particular episode
+    anime_id is MAL ID which can be retrieved from get_anime or it is also
+    used as one of the params for get_episodes tool.
+    ID is MAL ID which can be retrieved from get_episodes tool.
+    """
+    url = f"{NWS_API_BASE}anime/{anime_id}/episodes/{id}"
 
+    response = await call_jikan(url)
+    if not response["data"]:
+        return response
+
+    return f"""
+    Synopsis: {response["data"]["synopsis"]}
+    """
 
 async def call_jikan(url):
     response = await make_jikan_request(url)
